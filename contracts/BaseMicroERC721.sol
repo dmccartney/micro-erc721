@@ -7,23 +7,16 @@ import "@openzeppelin/contracts/utils/Context.sol";
 import "@openzeppelin/contracts/utils/Strings.sol";
 import "@openzeppelin/contracts/utils/introspection/ERC165.sol";
 import "@openzeppelin/contracts/interfaces/IERC721.sol";
-import "@openzeppelin/contracts/interfaces/IERC721Enumerable.sol";
 import "@openzeppelin/contracts/interfaces/IERC721Metadata.sol";
 import "@openzeppelin/contracts/interfaces/IERC721Receiver.sol";
 
 import "hardhat/console.sol";
 
-// This is an attempt to create a gas-efficient IERC721 for smaller collections.
-// It aims to be a drop-in replacement for OpenZeppelin's ERC721 / ERC721Enumerable
-// NOTE: this first exploration assumes 256 limit
-// TODO: decompose 256 from other collection sizes
-contract MicroERC721 is
-    Context,
-    ERC165,
-    IERC721,
-    IERC721Metadata,
-    IERC721Enumerable
-{
+// All MicroERC721 implementations aim to be drop-in replacements for OpenZeppelin's ERC721.
+// Implementations of this class will focus on gas-optimized mint/burn/transfers for different
+// sized collections.
+// This base class takes care of implementing the rest of the ERC721 specification.
+abstract contract BaseMicroERC721 is Context, ERC165, IERC721, IERC721Metadata {
     using Address for address;
     using Strings for uint256;
 
@@ -32,10 +25,6 @@ contract MicroERC721 is
 
     // Token symbol
     string private _symbol;
-
-    mapping(uint256 => address) private owners; // token ID => owner mapping
-    mapping(address => uint256) private holdings; // per-user bitmap of owned token IDs
-    uint256 totalHoldings; // bitmap of all token IDs that have been minted
 
     // Mapping from token ID to approved address
     mapping(uint256 => address) private _tokenApprovals;
@@ -47,6 +36,49 @@ contract MicroERC721 is
         _name = name_;
         _symbol = symbol_;
     }
+
+    /**
+     * @dev See {IERC721-balanceOf}.
+     */
+    function balanceOf(address owner)
+        public
+        view
+        virtual
+        override
+        returns (uint256);
+
+    /**
+     * @dev See {IERC721-ownerOf}.
+     */
+    function ownerOf(uint256 tokenId)
+        public
+        view
+        virtual
+        override
+        returns (address);
+
+    /**
+     * @dev Returns whether `tokenId` exists.
+     *
+     * Tokens can be managed by their owner or approved accounts via {approve} or {setApprovalForAll}.
+     *
+     * Tokens start existing when they are minted (`_mint`),
+     * and stop existing when they are burned (`_burn`).
+     */
+    function _exists(uint256 tokenId) internal view virtual returns (bool);
+
+    // This is called within _mint to perform book-keeping to effect the mint.
+    function _doMint(address to, uint256 tokenId) internal virtual;
+
+    // This is called within _burn to perform book-keeping to effect the burn.
+    function _doBurn(address owner, uint256 tokenId) internal virtual;
+
+    // This is called within _transfer to perform book-keeping to effect the transfer.
+    function _doTransfer(
+        address from,
+        address to,
+        uint256 tokenId
+    ) internal virtual;
 
     /**
      * @dev See {IERC165-supportsInterface}.
@@ -110,51 +142,10 @@ contract MicroERC721 is
     }
 
     /**
-     * @dev See {IERC721-balanceOf}.
-     */
-    function balanceOf(address owner)
-        public
-        view
-        virtual
-        override
-        returns (uint256)
-    {
-        require(
-            owner != address(0),
-            "ERC721: balance query for the zero address"
-        );
-        uint256 h = holdings[owner];
-        uint16 count = 0;
-        while (h != 0) {
-            h &= (h - 1);
-            count++;
-        }
-        return count;
-    }
-
-    /**
-     * @dev See {IERC721-ownerOf}.
-     */
-    function ownerOf(uint256 tokenId)
-        public
-        view
-        virtual
-        override
-        returns (address)
-    {
-        address owner = owners[uint8(tokenId)];
-        require(
-            owner != address(0),
-            "ERC721: owner query for nonexistent token"
-        );
-        return owner;
-    }
-
-    /**
      * @dev See {IERC721-approve}.
      */
     function approve(address to, uint256 tokenId) public virtual override {
-        address owner = MicroERC721.ownerOf(tokenId);
+        address owner = ownerOf(tokenId);
         require(to != owner, "ERC721: approval to current owner");
 
         require(
@@ -282,18 +273,6 @@ contract MicroERC721 is
     }
 
     /**
-     * @dev Returns whether `tokenId` exists.
-     *
-     * Tokens can be managed by their owner or approved accounts via {approve} or {setApprovalForAll}.
-     *
-     * Tokens start existing when they are minted (`_mint`),
-     * and stop existing when they are burned (`_burn`).
-     */
-    function _exists(uint256 tokenId) internal view virtual returns (bool) {
-        return tokenId < 256 && owners[uint8(tokenId)] != address(0);
-    }
-
-    /**
      * @dev Returns whether `spender` is allowed to manage `tokenId`.
      *
      * Requirements:
@@ -310,7 +289,7 @@ contract MicroERC721 is
             _exists(tokenId),
             "ERC721: operator query for nonexistent token"
         );
-        address owner = MicroERC721.ownerOf(tokenId);
+        address owner = ownerOf(tokenId);
         return (spender == owner ||
             getApproved(tokenId) == spender ||
             isApprovedForAll(owner, spender));
@@ -364,117 +343,11 @@ contract MicroERC721 is
 
         _beforeTokenTransfer(address(0), to, tokenId);
 
-        owners[uint8(tokenId)] = to;
-        holdings[to] |= (1 << uint8(tokenId));
-        totalHoldings |= (1 << uint8(tokenId));
+        _doMint(to, tokenId);
 
         emit Transfer(address(0), to, tokenId);
 
         _afterTokenTransfer(address(0), to, tokenId);
-    }
-
-    // -1 == not found
-    function findNth(
-        uint256 source,
-        uint8 n,
-        uint8 depth,
-        uint8 offset,
-        uint8 offsetCount
-    )
-        public
-        view
-        returns (
-            uint8, // the offset of the Nth, if found
-            uint8 // the count found up to N
-        )
-    {
-        uint8 nthIndex = 0;
-        uint8 count = offsetCount;
-        if (depth <= 8) {
-            uint8 b = uint8(source & 0xFF);
-            for (uint8 i = 0; i < 8; i++) {
-                if (b & (1 << i) != 0) {
-                    count++;
-                    if (count == n) {
-                        return (i + offset, count);
-                    }
-                }
-            }
-        }
-        uint256 mask = ((1 << depth) - 1);
-        uint256 masked = source & mask;
-        // lNthIndex is the position of the Nth set bit on the left hand side, if found
-        // lCount is the number of set bits (up to N) found on the left hand side
-        (uint8 lNthIndex, uint8 lCount) = masked == 0
-            ? (0, offsetCount)
-            : findNth(masked, n, depth / 2, offset, offsetCount);
-        // If we found it on the left-hand side, return the success.
-        if (lCount >= n) {
-            return (lNthIndex, n);
-        }
-        // Otherwise look for it on the right-hand side.
-        masked = (source << depth) & mask;
-        return
-            masked == 0
-                ? (0, lCount)
-                : findNth(masked, n, depth / 2, offset, lCount);
-    }
-
-    function findOn(
-        uint256 source,
-        uint8 depth,
-        uint8 offset
-    ) public view returns (uint8[] memory) {
-        uint8[] memory empty = new uint8[](0);
-        if (depth <= 8) {
-            uint16 count = 0;
-            uint8 b = uint8(source & 0xFF);
-            while (b != 0) {
-                b &= (b - 1);
-                count++;
-            }
-            uint8[] memory result = new uint8[](count);
-            count = 0;
-            b = uint8(source & 0xFF);
-            for (uint8 i = 0; i < 8; i++) {
-                if (b & (1 << i) != 0) {
-                    result[count++] = i + offset;
-                }
-            }
-            return result;
-        }
-        uint256 mask = ((1 << depth) - 1);
-        uint256 masked = source & mask;
-        uint8[] memory l = masked == 0
-            ? empty
-            : findOn(masked, depth / 2, offset);
-        masked = (source << depth) & mask;
-        uint8[] memory r = masked == 0
-            ? empty
-            : findOn(masked, depth / 2, offset + depth);
-        return merge(l, r);
-    }
-
-    function merge(uint8[] memory a, uint8[] memory b)
-        private
-        pure
-        returns (uint8[] memory)
-    {
-        if (a.length < 1) {
-            return b;
-        }
-        if (b.length < 1) {
-            return a;
-        }
-        uint8 i;
-        uint8[] memory result = new uint8[](a.length + b.length);
-        for (i = 0; i < a.length; i++) {
-            result[i] = a[i];
-        }
-        for (i = 0; i < b.length; i++) {
-            result[i + a.length] = b[i];
-        }
-        return result;
     }
 
     /**
@@ -488,16 +361,14 @@ contract MicroERC721 is
      * Emits a {Transfer} event.
      */
     function _burn(uint256 tokenId) internal virtual {
-        address owner = MicroERC721.ownerOf(tokenId);
+        address owner = ownerOf(tokenId);
 
         _beforeTokenTransfer(owner, address(0), tokenId);
 
         // Clear approvals
         _approve(address(0), tokenId);
 
-        owners[uint8(tokenId)] = address(0);
-        holdings[owner] ^= (1 << uint8(tokenId));
-        totalHoldings ^= (1 << uint8(tokenId));
+        _doBurn(owner, tokenId);
 
         emit Transfer(owner, address(0), tokenId);
 
@@ -521,7 +392,7 @@ contract MicroERC721 is
         uint256 tokenId
     ) internal virtual {
         require(
-            MicroERC721.ownerOf(tokenId) == from,
+            ownerOf(tokenId) == from,
             "ERC721: transfer from incorrect owner"
         );
         require(to != address(0), "ERC721: transfer to the zero address");
@@ -531,9 +402,7 @@ contract MicroERC721 is
         // Clear approvals from the previous owner
         _approve(address(0), tokenId);
 
-        holdings[from] ^= (1 << uint8(tokenId));
-        holdings[to] |= (1 << uint8(tokenId));
-        owners[uint8(tokenId)] = to;
+        _doTransfer(from, to, tokenId);
 
         emit Transfer(from, to, tokenId);
 
@@ -547,7 +416,7 @@ contract MicroERC721 is
      */
     function _approve(address to, uint256 tokenId) internal virtual {
         _tokenApprovals[uint8(tokenId)] = to;
-        emit Approval(MicroERC721.ownerOf(tokenId), to, tokenId);
+        emit Approval(ownerOf(tokenId), to, tokenId);
     }
 
     /**
@@ -643,65 +512,4 @@ contract MicroERC721 is
         address to,
         uint256 tokenId
     ) internal virtual {}
-
-    /**
-     * @dev See {IERC721Enumerable-tokenOfOwnerByIndex}.
-     */
-    function tokenOfOwnerByIndex(address owner, uint256 index)
-        public
-        view
-        virtual
-        override
-        returns (uint256)
-    {
-        (uint8 tokenId, uint8 foundCount) = findNth(
-            holdings[owner],
-            uint8(index) + 1,
-            128,
-            0,
-            0
-        );
-        require(
-            foundCount == index + 1,
-            "ERC721Enumerable: owner index out of bounds"
-        );
-        return tokenId;
-    }
-
-    /**
-     * @dev See {IERC721Enumerable-totalSupply}.
-     */
-    function totalSupply() public view virtual override returns (uint256) {
-        uint256 h = totalHoldings;
-        uint16 count = 0;
-        while (h != 0) {
-            h &= (h - 1);
-            count++;
-        }
-        return count;
-    }
-
-    /**
-     * @dev See {IERC721Enumerable-tokenByIndex}.
-     */
-    function tokenByIndex(uint256 index)
-        public
-        view
-        virtual
-        override
-        returns (uint256)
-    {
-        (uint8 tokenId, uint8 foundCount) = findNth(
-            totalHoldings,
-            uint8(index) + 1,
-            128,
-            0,
-            0
-        );
-        require(
-            foundCount == index + 1,
-            "ERC721Enumerable: global index out of bounds"
-        );
-        return tokenId;
-    }
 }
