@@ -21,6 +21,7 @@ module.exports = {
   },
   gasReporter: {
     enabled: process.env.REPORT_GAS !== undefined,
+    showTimeSpent: true,
     currency: "USD",
     gasPrice: 125,
     // onlyCalledMethods: false,

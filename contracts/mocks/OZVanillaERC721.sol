@@ -4,9 +4,11 @@ pragma solidity ^0.8.9;
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 
 contract OZVanillaERC721 is ERC721 {
-    constructor(string memory name, string memory symbol)
-        ERC721(name, symbol)
-    {}
+    constructor(
+        string memory name,
+        string memory symbol,
+        uint256 size
+    ) ERC721(name, symbol) {}
 
     function baseURI() public view returns (string memory) {
         return _baseURI();

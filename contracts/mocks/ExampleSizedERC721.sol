@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.9;
 
-import "../Limit256MicroERC721.sol";
+import "../SizedERC721.sol";
 
-contract Example256MicroERC721 is Limit256MicroERC721 {
-    constructor(string memory name, string memory symbol)
-        BaseMicroERC721(name, symbol)
-    {}
+contract ExampleSizedERC721 is SizedERC721 {
+    constructor(
+        string memory name,
+        string memory symbol,
+        uint256 size
+    ) SizedERC721(name, symbol, size) {}
 
     function baseURI() public view returns (string memory) {
         return _baseURI();
