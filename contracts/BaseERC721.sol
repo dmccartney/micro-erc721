@@ -12,11 +12,11 @@ import "@openzeppelin/contracts/interfaces/IERC721Receiver.sol";
 
 import "hardhat/console.sol";
 
-// All MicroERC721 implementations aim to be drop-in replacements for OpenZeppelin's ERC721.
+// All of these implementations aim to be drop-in replacements for OpenZeppelin's ERC721.
 // Implementations of this class will focus on gas-optimized mint/burn/transfers for different
 // sized collections.
 // This base class takes care of implementing the rest of the ERC721 specification.
-abstract contract BaseMicroERC721 is Context, ERC165, IERC721, IERC721Metadata {
+abstract contract BaseERC721 is Context, ERC165, IERC721, IERC721Metadata {
     using Address for address;
     using Strings for uint256;
 

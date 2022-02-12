@@ -1,0 +1,15 @@
+name: Run Tests on PR
+'on': pull_request
+jobs:
+  build_and_test:
+    if: '${{ github.event.pull_request.head.repo.full_name == github.repository }}'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v2
+      - name: Install Dependencies
+        run: npm install
+      - name: Run Tests
+        run: npx hardhat test
+        env:
+          REPORT_GAS: "true"
