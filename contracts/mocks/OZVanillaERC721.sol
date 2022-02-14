@@ -22,6 +22,24 @@ contract OZVanillaERC721 is ERC721 {
         _mint(to, tokenId);
     }
 
+    function multiMint(
+        address to,
+        uint256 fromTokenId,
+        uint256 quantity
+    ) public {
+        for (uint256 i = 0; i < quantity; i++) {
+            _mint(to, fromTokenId + i);
+        }
+    }
+
+    function multiMint2(address to, uint256 fromTokenId) public {
+        multiMint(to, fromTokenId, 2);
+    }
+
+    function multiMint20(address to, uint256 fromTokenId) public {
+        multiMint(to, fromTokenId, 20);
+    }
+
     function safeMint(address to, uint256 tokenId) public {
         _safeMint(to, tokenId);
     }

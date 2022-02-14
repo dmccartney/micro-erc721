@@ -16,6 +16,15 @@ describe("EnumerableBitMaps", () => {
     await estimateGas(ebm, "indexOfNth", 0, 100);
     // ~= 24401
   });
+  it("setMulti with 100 in 100", async function () {
+    let ebm = await deploy("EnumerableBitMapMock");
+    await estimateGas(ebm, "setMulti", 0, 10);
+    // ~=
+    await ebm.setMulti(0, 10);
+    expect(await ebm.countSet(1000)).to.be.equal(10);
+    await ebm.setMulti(50, 10);
+    expect(await ebm.countSet(1000)).to.be.equal(20);
+  });
   it("countSet with 100 in 100", async function () {
     let ebm = await deploy("EnumerableBitMapMock");
     for (let i = 0; i < 100; i++) {

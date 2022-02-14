@@ -23,6 +23,10 @@ contract EnumerableBitMapMock {
         _bitmap.set(index);
     }
 
+    function setMulti(uint256 fromIndex, uint256 quantity) public {
+        _bitmap.setMulti(fromIndex, quantity);
+    }
+
     function unset(uint256 index) public {
         _bitmap.unset(index);
     }

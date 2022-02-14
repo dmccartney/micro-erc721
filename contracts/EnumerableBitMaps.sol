@@ -122,4 +122,35 @@ library EnumerableBitMaps {
         }
         return (found, bucketIndex, bucketStartCount);
     }
+
+    /**
+     * @dev Sets `count` bits starting `fromIndex`.
+     */
+    function setMulti(
+        BitMaps.BitMap storage bitmap,
+        uint256 fromIndex,
+        uint256 count
+    ) internal {
+        uint256 index = fromIndex;
+        uint256 toIndex = fromIndex + count;
+        while (index < toIndex) {
+            uint256 bucket = index >> 8;
+            uint256 remainingBitOnCount = toIndex - index;
+            uint256 bucketBitOnStartIndex = index & 0xff;
+            uint256 bucketBitOnCount = 256 - bucketBitOnStartIndex;
+            if (bucketBitOnCount > remainingBitOnCount) {
+                bucketBitOnCount = remainingBitOnCount;
+            }
+            uint256 mask = maskN(bucketBitOnCount) << bucketBitOnStartIndex;
+            bitmap._data[bucket] |= mask;
+            index += bucketBitOnCount;
+        }
+    }
+
+    function maskN(uint256 n) internal pure returns (uint256) {
+        if (n >= 256) {
+            return type(uint256).max;
+        }
+        return (1 << n) - 1;
+    }
 }
