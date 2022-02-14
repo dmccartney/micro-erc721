@@ -21,9 +21,16 @@ abstract contract SizedERC721 is BaseERC721 {
     using BitMaps for BitMaps.BitMap;
     using EnumerableBitMaps for BitMaps.BitMap;
 
+    struct Ownership {
+        address owner;
+        uint64 startedAt;
+    }
+    struct Holdings {
+        BitMaps.BitMap tokens;
+    }
     uint256 private immutable _size; // the maximum number of token IDs (fixed at construction)
-    mapping(uint256 => address) private _owners; // token ID => owner mapping
-    mapping(address => BitMaps.BitMap) private _holdings; // per-user bitmap of owned token IDs
+    mapping(uint256 => Ownership) private _owners; // token ID => owner mapping
+    mapping(address => Holdings) private _holdings; // per-user bitmap of owned token IDs
 
     constructor(
         string memory name,
@@ -44,7 +51,7 @@ abstract contract SizedERC721 is BaseERC721 {
             owner != address(0),
             "ERC721: balance query for the zero address"
         );
-        return _holdings[owner].countSet(_size);
+        return _holdings[owner].tokens.countSet(_size);
     }
 
     function ownerOf(uint256 tokenId)
@@ -54,7 +61,7 @@ abstract contract SizedERC721 is BaseERC721 {
         override
         returns (address)
     {
-        address owner = _owners[tokenId];
+        address owner = _owners[tokenId].owner;
         require(
             owner != address(0),
             "ERC721: owner query for nonexistent token"
@@ -69,17 +76,49 @@ abstract contract SizedERC721 is BaseERC721 {
         override
         returns (bool)
     {
-        return _owners[tokenId] != address(0);
+        return _owners[tokenId].owner != address(0);
+    }
+
+    function _anyExists(uint256 fromTokenId, uint256 quantity)
+        internal
+        view
+        virtual
+        override
+        returns (bool)
+    {
+        for (uint256 i = 0; i < quantity; i++) {
+            if (_owners[fromTokenId + i].owner != address(0)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     function _doMint(address to, uint256 tokenId) internal virtual override {
-        _owners[tokenId] = to;
-        _holdings[to].set(tokenId);
+        require(tokenId < _size, "token ID out of range");
+        _owners[tokenId].owner = to;
+        _owners[tokenId].startedAt = uint64(block.timestamp);
+
+        _holdings[to].tokens.set(tokenId);
+    }
+
+    function _doMultiMint(
+        address to,
+        uint256 fromTokenId,
+        uint256 quantity
+    ) internal virtual override {
+        require(fromTokenId + quantity <= _size, "token ID out of range");
+        for (uint256 i = 0; i < quantity; i++) {
+            _owners[fromTokenId + i].owner = to;
+            _owners[fromTokenId + i].startedAt = uint64(block.timestamp);
+        }
+        _holdings[to].tokens.setMulti(fromTokenId, quantity);
     }
 
     function _doBurn(address owner, uint256 tokenId) internal virtual override {
-        _owners[tokenId] = address(0);
-        _holdings[owner].unset(tokenId);
+        _owners[tokenId].owner = address(0);
+        _owners[tokenId].startedAt = 0;
+        _holdings[owner].tokens.unset(tokenId);
     }
 
     function _doTransfer(
@@ -87,9 +126,11 @@ abstract contract SizedERC721 is BaseERC721 {
         address to,
         uint256 tokenId
     ) internal virtual override {
-        _holdings[from].unset(tokenId);
-        _holdings[to].set(tokenId);
-        _owners[tokenId] = to;
+        _holdings[from].tokens.unset(tokenId);
+        _holdings[to].tokens.set(tokenId);
+
+        _owners[tokenId].owner = to;
+        _owners[tokenId].startedAt = uint64(block.timestamp);
     }
 
     /**
@@ -101,7 +142,7 @@ abstract contract SizedERC721 is BaseERC721 {
         view
         returns (uint256)
     {
-        (bool wasFound, uint256 position) = _holdings[owner].indexOfNth(
+        (bool wasFound, uint256 position) = _holdings[owner].tokens.indexOfNth(
             index + 1,
             _size
         );

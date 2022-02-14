@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.9;
 
-import "../SizedERC721.sol";
+import "erc721a/contracts/ERC721A.sol";
 
-contract ExampleSizedERC721 is SizedERC721 {
+contract ChiruERC721 is ERC721A {
     constructor(
         string memory name,
         string memory symbol,
         uint256 size
-    ) SizedERC721(name, symbol, size) {}
+    ) ERC721A(name, symbol) {}
 
     function baseURI() public view returns (string memory) {
         return _baseURI();
@@ -19,15 +19,23 @@ contract ExampleSizedERC721 is SizedERC721 {
     }
 
     function mint(address to, uint256 tokenId) public {
-        _mint(to, tokenId);
+        require(
+            tokenId == _currentIndex,
+            "ChiruERC721 can only mint consecutive token IDs"
+        );
+        _mint(to, 1, "", false);
     }
 
     function multiMint(
         address to,
         uint256 fromTokenId,
-        uint256 quantity
+        uint256 count
     ) public {
-        _multiMint(to, fromTokenId, quantity);
+        require(
+            fromTokenId == _currentIndex,
+            "ChiruERC721 can only mint consecutive token IDs"
+        );
+        _mint(to, count, "", false);
     }
 
     function multiMint2(address to, uint256 fromTokenId) public {

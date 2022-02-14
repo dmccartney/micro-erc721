@@ -67,8 +67,23 @@ abstract contract BaseERC721 is Context, ERC165, IERC721, IERC721Metadata {
      */
     function _exists(uint256 tokenId) internal view virtual returns (bool);
 
+    /**
+     * @dev Returns whether any of `quantity` tokens `fromTokenId` exists.
+     */
+    function _anyExists(uint256 fromTokenId, uint256 quantity)
+        internal
+        view
+        virtual
+        returns (bool);
+
     // This is called within _mint to perform book-keeping to effect the mint.
     function _doMint(address to, uint256 tokenId) internal virtual;
+
+    function _doMultiMint(
+        address to,
+        uint256 fromTokenId,
+        uint256 quantity
+    ) internal virtual;
 
     // This is called within _burn to perform book-keeping to effect the burn.
     function _doBurn(address owner, uint256 tokenId) internal virtual;
@@ -348,6 +363,32 @@ abstract contract BaseERC721 is Context, ERC165, IERC721, IERC721Metadata {
         emit Transfer(address(0), to, tokenId);
 
         _afterTokenTransfer(address(0), to, tokenId);
+    }
+
+    /**
+     * @dev Mints `quantity` tokens `fromTokenId` and transfers them to `to`.
+     */
+    function _multiMint(
+        address to,
+        uint256 fromTokenId,
+        uint256 quantity
+    ) internal virtual {
+        require(to != address(0), "ERC721: mint to the zero address");
+        require(
+            !_anyExists(fromTokenId, quantity),
+            "ERC721: token already minted"
+        );
+
+        for (uint256 i = 0; i < quantity; i++) {
+            _beforeTokenTransfer(address(0), to, fromTokenId + i);
+        }
+
+        _doMultiMint(to, fromTokenId, quantity);
+
+        for (uint256 i = 0; i < quantity; i++) {
+            emit Transfer(address(0), to, fromTokenId + i);
+            _afterTokenTransfer(address(0), to, fromTokenId + i);
+        }
     }
 
     /**
